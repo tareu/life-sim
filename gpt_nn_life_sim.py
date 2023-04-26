@@ -452,28 +452,54 @@ def main():
 
         #fill background
         screen.fill(background_colour)
-
+        info_box_displayed = False
+            
         # display game objects
         for x in range(grid_size):
             for y in range(grid_size):
-                if isinstance(grid[x][y], Person):
+                if isinstance(grid[x][y], Person) or isinstance(grid[x][y], Food):
                     object_size = cell_size * zoom
                     if object_size < 1:
-                        if person_surface.get_size() != (0, 0):
-                            screen.set_at((int((x * cell_size * zoom)+camera_x), int((y * cell_size * zoom)+camera_y)), person_surface.get_at((0, 0)))
+                        if isinstance(grid[x][y], Person):
+                            color = (255, 255, 0)  # yellow
                         else:
-                            screen.set_at((int((x * cell_size * zoom)+camera_x), int((y * cell_size * zoom)+camera_y)), (255, 255, 0))  # yellow
+                            color = (0, 255, 0)  # green
+                        screen.set_at((int((x * cell_size * zoom)+camera_x), int((y * cell_size * zoom)+camera_y)), color)
                     else:
-                        screen.blit(person_surface, ((x * cell_size * zoom) + camera_x, (y * cell_size * zoom) + camera_y))
-                elif isinstance(grid[x][y], Food):
-                    object_size = cell_size * zoom
-                    if object_size < 1:
-                        if food_surface.get_size() != (0, 0):
-                            screen.set_at((int((x * cell_size * zoom)+camera_x), int((y * cell_size * zoom)+camera_y)), food_surface.get_at((0, 0)))
+                        if isinstance(grid[x][y], Person):
+                            object_surface = person_surface
                         else:
-                            screen.set_at((int((x * cell_size * zoom)+camera_x), int((y * cell_size * zoom)+camera_y)), (0, 255, 0))  # green
+                            object_surface = food_surface
+                        screen.blit(object_surface, ((x * cell_size * zoom) + camera_x, (y * cell_size * zoom) + camera_y))
+                    
+                    # display information box
+                    if (x * cell_size * zoom + camera_x) <= mouse_x <= (x * cell_size * zoom + camera_x + object_size) and \
+                    (y * cell_size * zoom + camera_y) <= mouse_y <= (y * cell_size * zoom + camera_y + object_size):
+                        if isinstance(grid[x][y], Person):
+                            info_box_text = "Lifespan: {} \nHunger: {} \nRepro Timer: {}".format(grid[x][y].lifespan, grid[x][y].hunger, grid[x][y].reproduction_timer)
+                        elif isinstance(grid[x][y], Food):
+                            info_box_text = "Type: {} \nCalories: {}".format(grid[x][y].x, grid[x][y].y)
+                    
+                        # Update the info_box position
+                        info_box_surface.set_alpha(200)
+                        info_box_rect.center = (int((x * cell_size * zoom) + camera_x), int((y * cell_size * zoom) + camera_y) - 60)
+                        info_box_displayed = True
                     else:
-                        screen.blit(food_surface, ((x * cell_size * zoom)+camera_x, (y * cell_size * zoom)+camera_y))
+                        info_box_displayed = False
+
+                        
+        if info_box_displayed:
+            # Render and blit the info_box
+            screen.blit(info_box_surface, info_box_rect)
+
+            # Render and blit the text with newlines handled
+            lines = info_box_text.split('\n')
+            text_vertical_spacing = 5
+            for i, line in enumerate(lines):
+                info_box_text_surface = info_box_font.render(line, True, (255, 255, 255))
+                text_y = info_box_rect.y + 10 + i * (info_box_font.get_height() + text_vertical_spacing)
+                screen.blit(info_box_text_surface, (info_box_rect.x + 10, text_y))
+
 
         simulation.people.sort(key=lambda x: x.lifespan)
         for i, person in enumerate(simulation.people):
