@@ -150,7 +150,6 @@ class Grid:
             while True:
                 x, y = random.randint(0, len(self.grid) - 1), random.randint(0, len(self.grid[0]) - 1)
                 if self.grid[x][y] is None:
-                    genetic_code = ''.join(random.choices('ATCG', k=8))
                     person = Person(x, y, None, None, initial_lifespan, reproduction_timer, birth_hunger, max_hunger)
                     self.grid[x][y] = person
                     people.append(person)
