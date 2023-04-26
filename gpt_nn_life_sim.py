@@ -71,9 +71,9 @@ class Person:
 
         if isinstance(grid[new_x][new_y], Food):
             max_hunger = self.hunger_max
-            food_value = 500
-            if self.hunger < (max_hunger - food_value):
-                self.hunger += food_value
+           
+            if self.hunger < (max_hunger - grid[new_x][new_y].food_value):
+                self.hunger += grid[new_x][new_y].food_value
 
             grid[new_x][new_y] = None
         elif grid[new_x][new_y] is None:
@@ -156,13 +156,13 @@ class Grid:
                     break
         return people
 
-    def add_food_sources(self, num_food_sources, food_production_rate, food_distribution_radius):
+    def add_food_sources(self, num_food_sources, food_production_rate, food_distribution_radius, food_value):
         food_sources = []
         for _ in range(num_food_sources):
             while True:
                 x, y = random.randint(0, len(self.grid) - 1), random.randint(0, len(self.grid[0]) - 1)
                 if self.grid[x][y] is None:
-                    food_source = FoodSource(x, y, food_production_rate, food_distribution_radius)
+                    food_source = FoodSource(x, y, food_production_rate, food_distribution_radius, food_value)
                     self.grid[x][y] = food_source
                     food_sources.append(food_source)
                     break
@@ -192,11 +192,12 @@ class Grid:
                     break
 
 class FoodSource:
-    def __init__(self, x, y, food_production_rate, food_distribution_radius):
+    def __init__(self, x, y, food_production_rate, food_distribution_radius, food_value):
         self.x = x
         self.y = y
         self.food_production_rate = food_production_rate
         self.food_distribution_radius = food_distribution_radius
+        self.food_value = food_value
 
     def generate_food(self, grid):
         food_generated = []
@@ -209,7 +210,7 @@ class FoodSource:
                 x, y = self.x + x_offset, self.y + y_offset
 
                 if 0 <= x < len(grid) and 0 <= y < len(grid[0]) and grid[x][y] is None:
-                    food = Food(x, y)
+                    food = Food(x, y, self.food_value)
                     food_generated.append(food)
                     break
         return food_generated
@@ -256,8 +257,9 @@ class Simulation:
 
 
 class Food:
-    def __init__(self, x, y):
+    def __init__(self, x, y, food_value):
         self.x, self.y = x, y
+        self.food_value = food_value
        
        
 def get_valid_neighbors(x, y, grid_size):
@@ -294,20 +296,23 @@ def draw_gradient_rect(surface, rect, start_color, end_color, vertical=True):
 
 
 def main():
-    #food is weird, look at food replenish func for details, uses magic num
+    
     grid_size = 100
     num_people = 200
     initial_lifespan = 5000
     reproduction_timer = 100
     max_hunger = 4000
     birth_hunger = 3000
-    
+    food_value = 100
     replenish_rate = 1
+    num_food_sources = 2
+    food_production_rate=1
+    food_distribution_radius=10
 
     grid = Grid(grid_size)
     people = grid.add_people(num_people, initial_lifespan, reproduction_timer, birth_hunger, max_hunger)
     
-    food_sources = grid.add_food_sources(num_food_sources=2, food_production_rate=1, food_distribution_radius=10)
+    food_sources = grid.add_food_sources(num_food_sources, food_production_rate, food_distribution_radius, food_value)
     for _ in food_sources:
         for _ in range(10):
             grid.generate_food(food_sources)
@@ -477,7 +482,7 @@ def main():
                         if isinstance(grid[x][y], Person):
                             info_box_text = "Lifespan: {} \nHunger: {} \nRepro Timer: {}".format(grid[x][y].lifespan, grid[x][y].hunger, grid[x][y].reproduction_timer)
                         elif isinstance(grid[x][y], Food):
-                            info_box_text = "Type: {} \nCalories: {}".format(grid[x][y].x, grid[x][y].y)
+                            info_box_text = "Food value: {}".format(grid[x][y].food_value)
                     
                         # Update the info_box position
                         info_box_surface.set_alpha(200)
