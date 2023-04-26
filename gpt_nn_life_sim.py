@@ -483,8 +483,7 @@ def main():
                         info_box_surface.set_alpha(200)
                         info_box_rect.center = (int((x * cell_size * zoom) + camera_x), int((y * cell_size * zoom) + camera_y) - 60)
                         info_box_displayed = True
-                    else:
-                        info_box_displayed = False
+                    
 
                         
         if info_box_displayed:
