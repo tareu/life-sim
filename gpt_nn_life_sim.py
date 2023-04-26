@@ -7,14 +7,15 @@ import uuid
 
 
 class Person:
-    def __init__(self, x, y, parent1, parent2, lifespan, reproduction_timer, hunger):
+    def __init__(self, x, y, parent1, parent2, lifespan, reproduction_timer, birth_hunger, hunger_max):
         self.x, self.y = x, y
         self.lifespan, self.reproduction_timer = lifespan, random.randint(1, reproduction_timer)
         self.initial_lifespan = self.lifespan
         self.reproduction_cooldown_initial = reproduction_timer
         self.uuid = uuid.uuid4()
-        self.hunger = hunger
-        self.hunger_initial = hunger
+        self.hunger = birth_hunger
+        self.hunger_max = hunger_max
+        self.birth_hunger = birth_hunger
 
         if parent1 is None or parent2 is None:
             self.nn = self.create_neural_net()
@@ -55,31 +56,28 @@ class Person:
 
         return new_nn
 
-    def move(self, grid, ):
-        directions = [(0, 1), (0, -1), (1, 0), (-1, 0)]
+    def move(self, grid):
+        directions = [(0, 0), (0, 1), (0, -1), (1, 0), (-1, 0)]
 
         surroundings = self.get_surroundings(grid)
         input_tensor = torch.tensor([self.lifespan, self.reproduction_timer, self.hunger] + surroundings, dtype=torch.float32).unsqueeze(0)
-       
+    
         output = self.nn(input_tensor)
         
         move_idx = torch.argmax(output).item()
         dx, dy = directions[move_idx]
-        new_x, new_y = self.x + dx, self.y + dy
+        grid_size = len(grid)
+        new_x, new_y = (self.x + dx) % grid_size, (self.y + dy) % grid_size
 
-        valid_neighbors = get_valid_neighbors(self.x, self.y, len(grid))
-        
-        if (new_x, new_y) in valid_neighbors:
-            if isinstance(grid[new_x][new_y], Food):
-                max_hunger = 1000
-                food_value = 100
-                if not self.hunger > max_hunger:
+        if isinstance(grid[new_x][new_y], Food):
+            max_hunger = self.hunger_max
+            food_value = 500
+            if self.hunger < (max_hunger - food_value):
+                self.hunger += food_value
 
-                    self.hunger += food_value
-
-                grid[new_x][new_y] = None
-            elif grid[new_x][new_y] is None:
-                self.update_position(grid, new_x, new_y)
+            grid[new_x][new_y] = None
+        elif grid[new_x][new_y] is None:
+            self.update_position(grid, new_x, new_y)
             
 
     def get_surroundings(self, grid):
@@ -112,13 +110,13 @@ class Person:
         
         if self.reproduction_timer > 0:
             return None
-        if self.hunger < (self.hunger_initial / 2):
+        if self.hunger < (self.hunger_max * 0.75):
             return None
         for nx, ny in get_valid_neighbors(x, y, grid.size):
             if grid[nx][ny] == None:
                 self.hunger = self.hunger / 2
-                child = Person(nx, ny, parent1=self, parent2=grid[x][y], lifespan=(self.initial_lifespan + grid[x][y].initial_lifespan) / 2, reproduction_timer=self.reproduction_cooldown_initial, hunger=self.hunger)
-                grid[x][y] = child
+                child = Person(nx, ny, self, grid[x][y], (self.initial_lifespan + grid[x][y].initial_lifespan) / 2, self.reproduction_cooldown_initial, self.birth_hunger, self.hunger_max)
+                grid[nx][ny] = child
                 self.reproduction_timer = self.reproduction_cooldown_initial
                 return child
         return None
@@ -144,14 +142,14 @@ class Grid:
     def __getitem__(self, index):
         return self.grid[index]
 
-    def add_people(self, num_people, initial_lifespan, reproduction_timer, initial_hunger):
+    def add_people(self, num_people, initial_lifespan, reproduction_timer, birth_hunger, max_hunger):
         people = []
         for _ in range(num_people):
             while True:
                 x, y = random.randint(0, len(self.grid) - 1), random.randint(0, len(self.grid[0]) - 1)
                 if self.grid[x][y] is None:
                     genetic_code = ''.join(random.choices('ATCG', k=8))
-                    person = Person(x, y, None, None, initial_lifespan, reproduction_timer, initial_hunger)
+                    person = Person(x, y, None, None, initial_lifespan, reproduction_timer, birth_hunger, max_hunger)
                     self.grid[x][y] = person
                     people.append(person)
                     break
@@ -260,13 +258,12 @@ class Food:
     def __init__(self, x, y):
         self.x, self.y = x, y
        
-
+       
 def get_valid_neighbors(x, y, grid_size):
     valid_neighbors = []
     for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-        new_x, new_y = x + dx, y + dy
-        if 0 <= new_x < grid_size and 0 <= new_y < grid_size:
-            valid_neighbors.append((new_x, new_y))
+        new_x, new_y = (x + dx) % grid_size, (y + dy) % grid_size
+        valid_neighbors.append((new_x, new_y))
     return valid_neighbors
 
 def change_displayed_properties(new_properties):
@@ -276,17 +273,18 @@ def change_displayed_properties(new_properties):
 def main():
     #food is weird, look at food replenish func for details, uses magic num
     grid_size = 100
-    num_people = 100
-    initial_lifespan = 1000
-    reproduction_timer = 50
-    initial_hunger = 1000
+    num_people = 200
+    initial_lifespan = 5000
+    reproduction_timer = 100
+    max_hunger = 4000
+    birth_hunger = 3000
     
     replenish_rate = 1
 
     grid = Grid(grid_size)
-    people = grid.add_people(num_people, initial_lifespan, reproduction_timer, initial_hunger)
+    people = grid.add_people(num_people, initial_lifespan, reproduction_timer, birth_hunger, max_hunger)
     
-    food_sources = grid.add_food_sources(num_food_sources=5, food_production_rate=1, food_distribution_radius=3)
+    food_sources = grid.add_food_sources(num_food_sources=2, food_production_rate=1, food_distribution_radius=10)
     for _ in food_sources:
         for _ in range(10):
             grid.generate_food(food_sources)
@@ -302,11 +300,11 @@ def main():
     cell_size = 2
     
     pygame.init()
-    screen = pygame.display.set_mode((grid_size * cell_size, grid_size * cell_size), pygame.FULLSCREEN)
+    screen = pygame.display.set_mode((1400, 800), pygame.RESIZABLE)
     pygame.display.set_caption("2D People Simulation")
     clock = pygame.time.Clock()
     font = pygame.font.Font(None, 36)
-    list_font = pygame.font.Font(None, 12)
+    list_font = pygame.font.Font(None, 36-9)
 
    
 
@@ -315,21 +313,22 @@ def main():
     screen_width, screen_height = screen.get_size()
 
     WIDTH = screen_width
-    list_width = WIDTH // 3
-    list_x = WIDTH - list_width
+    list_width = WIDTH // 5
+    list_x = 0
     running = True
 # pygame.draw.rect(screen, (255,255,255), (last,0 ,1,len(simulation.people)), 1)
     tick = 0
     last = 0
     graph_history = []
 
-    zoom = 1.0
-    target_zoom = 1.0
-    camera_x = 0
-    camera_y = 0
+    menu = True
 
-    zoom_speed = 0.5
-    move_speed = 30
+    zoom = 1.0
+    target_zoom = screen_height/(cell_size*grid_size)
+    camera_x = (screen_width/2)-((cell_size*grid_size)/2)
+    camera_y = (screen_height/2)-((cell_size*grid_size)/2)
+
+    zoom_speed = 0.1
     lerp_speed = 0.1
     scroll_speed = 10
     scroll_y = 0
@@ -346,45 +345,50 @@ def main():
                 if event.key == pygame.K_i:
                     show_UI = not show_UI
                 elif event.key == pygame.K_DOWN:
-                    camera_y -= move_speed
+                    pass
                 elif event.key == pygame.K_ESCAPE:
                     running = False
                 elif event.key == pygame.K_UP:
-                    camera_y += move_speed
+                    pass
                 elif event.key == pygame.K_RIGHT:
-                    camera_x -= move_speed
+                    pass
                 elif event.key == pygame.K_LEFT:
-                    camera_x += move_speed
+                    pass
                 elif event.key == pygame.K_PERIOD:
-                    zoom += zoom_speed
+                    pass
                 elif event.key == pygame.K_COMMA:
-                    zoom -= zoom_speed
+                    pass
+                elif event.key == pygame.K_m:
+                    menu = not menu
                 elif event.key == pygame.K_f:
                     pygame.display.toggle_fullscreen()
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:  # Left click
-                    dragging = True
-                    prev_mouse_pos = event.pos
-                mouse_x, mouse_y = pygame.mouse.get_pos()
-                if list_x <= mouse_x <= list_x + list_width:
-                    if event.button == 4:  # Scroll up
-                        scroll_y = min(scroll_y + scroll_speed, 0)
-                    elif event.button == 5:  # Scroll down
-                        scroll_y -= scroll_speed
-                if list_x > mouse_x:
-                    if event.button == 4:  # Scroll up
-                        target_zoom = np.clip(target_zoom * (1 + zoom_speed), 0.1, 10)
-                    elif event.button == 5:  # Scroll down
-                        target_zoom = np.clip(target_zoom * (1 - zoom_speed), 0.1, 10)
-            elif event.type == pygame.MOUSEBUTTONUP:
-                if event.button == 1:  # Left click
-                    dragging = False
-            elif event.type == pygame.MOUSEMOTION:
-                if dragging:
-                    dx, dy = event.pos[0] - prev_mouse_pos[0], event.pos[1] - prev_mouse_pos[1]
-                    camera_x += dx
-                    camera_y += dy
-                    prev_mouse_pos = event.pos
+            if menu:
+                pass
+            if not menu:
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    if event.button == 1:  # Left click
+                        dragging = True
+                        prev_mouse_pos = event.pos
+                    mouse_x, mouse_y = pygame.mouse.get_pos()
+                    if list_x <= mouse_x < list_x + list_width:
+                        if event.button == 4:  # Scroll up
+                            scroll_y = min(scroll_y + scroll_speed, 0)
+                        elif event.button == 5:  # Scroll down
+                            scroll_y -= scroll_speed
+                    if list_x + list_width <= mouse_x:
+                        if event.button == 4:  # Scroll up
+                            target_zoom = np.clip(target_zoom * (1 + zoom_speed), 0.1, 10)
+                        elif event.button == 5:  # Scroll down
+                            target_zoom = np.clip(target_zoom * (1 - zoom_speed), 0.1, 10)
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1:  # Left click
+                        dragging = False
+                elif event.type == pygame.MOUSEMOTION:
+                    if dragging:
+                        dx, dy = event.pos[0] - prev_mouse_pos[0], event.pos[1] - prev_mouse_pos[1]
+                        camera_x += dx
+                        camera_y += dy
+                        prev_mouse_pos = event.pos
         # Update zoom with lerp for smoothness
         prev_zoom = zoom
         zoom = zoom + lerp_speed * (target_zoom - zoom)
@@ -393,8 +397,9 @@ def main():
         if prev_zoom != zoom:
             camera_x += (1 - zoom / prev_zoom) * (screen_width / 2 - camera_x)
             camera_y += (1 - zoom / prev_zoom) * (screen_height / 2 - camera_y)
-
-        simulation.step(tick)
+        
+        if not menu:
+            simulation.step(tick)
 
         #render game objects
         text = "tick = %d" % tick
@@ -407,26 +412,40 @@ def main():
         
         person_surface = pygame.transform.scale(person_surface, (int(person_surface.get_width() * zoom), int(person_surface.get_height() * zoom)))
         food_surface = pygame.transform.scale(food_surface, (int(food_surface.get_width() * zoom), int(food_surface.get_height() * zoom)))
- 
-       
+
+
         #fill background
         screen.fill(background_colour)
 
-        #display game objects
+        # display game objects
         for x in range(grid_size):
             for y in range(grid_size):
                 if isinstance(grid[x][y], Person):
-                    screen.blit(person_surface, ((x * cell_size * zoom) + camera_x, (y * cell_size * zoom) + camera_y))
+                    object_size = cell_size * zoom
+                    if object_size < 1:
+                        if person_surface.get_size() != (0, 0):
+                            screen.set_at((int((x * cell_size * zoom)+camera_x), int((y * cell_size * zoom)+camera_y)), person_surface.get_at((0, 0)))
+                        else:
+                            screen.set_at((int((x * cell_size * zoom)+camera_x), int((y * cell_size * zoom)+camera_y)), (255, 255, 0))  # yellow
+                    else:
+                        screen.blit(person_surface, ((x * cell_size * zoom) + camera_x, (y * cell_size * zoom) + camera_y))
                 elif isinstance(grid[x][y], Food):
-                    screen.blit(food_surface, ((x * cell_size * zoom)+camera_x, (y * cell_size * zoom)+camera_y))
+                    object_size = cell_size * zoom
+                    if object_size < 1:
+                        if food_surface.get_size() != (0, 0):
+                            screen.set_at((int((x * cell_size * zoom)+camera_x), int((y * cell_size * zoom)+camera_y)), food_surface.get_at((0, 0)))
+                        else:
+                            screen.set_at((int((x * cell_size * zoom)+camera_x), int((y * cell_size * zoom)+camera_y)), (0, 255, 0))  # green
+                    else:
+                        screen.blit(food_surface, ((x * cell_size * zoom)+camera_x, (y * cell_size * zoom)+camera_y))
 
         for i, person in enumerate(simulation.people):
             if i == 0:
-                text_pre = ', '.join(prop for prop in displayed_properties)
+                text_pre = ', '.join(prop for prop in displayed_properties + [str(zoom)])
                 text = list_font.render(text_pre, True, (255,255,255))
-                screen.blit(text, (list_x + 10, i * 10 + scroll_y))
+                screen.blit(text, (list_x, i + scroll_y))
             text = list_font.render(person.get_properties(displayed_properties), True, (255,255,255))
-            screen.blit(text, (list_x + 10, 10 + i * 10 + scroll_y))
+            screen.blit(text, (list_x, 20 + i * 20 + scroll_y))
         
         #ui blits
         if show_UI:
