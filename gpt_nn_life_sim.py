@@ -475,6 +475,7 @@ def main():
                     else:
                         screen.blit(food_surface, ((x * cell_size * zoom)+camera_x, (y * cell_size * zoom)+camera_y))
 
+        simulation.people.sort(key=lambda x: x.lifespan)
         for i, person in enumerate(simulation.people):
             if i == 0:
                 text_pre = ', '.join(prop for prop in displayed_properties + [str(zoom)])
