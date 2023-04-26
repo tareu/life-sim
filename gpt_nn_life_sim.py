@@ -360,6 +360,17 @@ def main():
     dragging = False
     prev_mouse_pos = None
 
+    # Create a surface for the info_box with rounded corners and a gradient background
+    info_box_surface = pygame.Surface((200, 75), pygame.SRCALPHA)
+    info_box_rect = info_box_surface.get_rect()
+    corner_radius = 10
+    bg_start_color = (100, 100, 255)
+    bg_end_color = (255, 100, 100)
+    draw_gradient_rect(info_box_surface, info_box_rect, bg_start_color, bg_end_color)
+    draw_rounded_rect(info_box_surface, info_box_rect, (0, 0, 0), corner_radius)
+
+    info_box_font = pygame.font.SysFont(None, 24)
+
     while running:
 
         for event in pygame.event.get():
