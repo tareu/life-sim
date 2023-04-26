@@ -404,7 +404,7 @@ def main():
                     if event.button == 1:  # Left click
                         dragging = True
                         prev_mouse_pos = event.pos
-                    mouse_x, mouse_y = pygame.mouse.get_pos()
+                    
                     if list_x <= mouse_x < list_x + list_width:
                         if event.button == 4:  # Scroll up
                             scroll_y = min(scroll_y + scroll_speed, 0)
