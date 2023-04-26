@@ -110,7 +110,9 @@ class Person:
         
         if self.reproduction_timer > 0:
             return None
-        if self.hunger < (self.hunger_max * 0.75):
+        
+        # no repro if your hunger is lower than minimum repro hunger
+        if self.hunger < (self.hunger_max * 0.75) and other_person.hunger < (other_person.hunger_max * 0.75):
             return None
         for nx, ny in get_valid_neighbors(x, y, grid.size):
             if grid[nx][ny] == None:
