@@ -372,7 +372,7 @@ def main():
     info_box_font = pygame.font.SysFont(None, 24)
 
     while running:
-
+        mouse_x, mouse_y = pygame.mouse.get_pos()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
