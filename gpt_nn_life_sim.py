@@ -272,6 +272,28 @@ def change_displayed_properties(new_properties):
     global displayed_properties
     displayed_properties = new_properties
 
+def draw_rounded_rect(surface, rect, color, corner_radius):
+    pygame.draw.rect(surface, color, rect, border_radius=corner_radius)
+
+def draw_gradient_rect(surface, rect, start_color, end_color, vertical=True):
+    if vertical:
+        for i in range(rect.height):
+            color = (
+                start_color[0] + int((end_color[0] - start_color[0]) * i / rect.height),
+                start_color[1] + int((end_color[1] - start_color[1]) * i / rect.height),
+                start_color[2] + int((end_color[2] - start_color[2]) * i / rect.height),
+            )
+            pygame.draw.line(surface, color, (rect.x, rect.y + i), (rect.x + rect.width, rect.y + i))
+    else:
+        for i in range(rect.width):
+            color = (
+                start_color[0] + int((end_color[0] - start_color[0]) * i / rect.width),
+                start_color[1] + int((end_color[1] - start_color[1]) * i / rect.width),
+                start_color[2] + int((end_color[2] - start_color[2]) * i / rect.width),
+            )
+            pygame.draw.line(surface, color, (rect.x + i, rect.y), (rect.x + i, rect.y + rect.height))
+
+
 def main():
     #food is weird, look at food replenish func for details, uses magic num
     grid_size = 100
