@@ -503,26 +503,27 @@ def main():
                 text_y = info_box_rect.y + 10 + i * (info_box_font.get_height() + text_vertical_spacing)
                 screen.blit(info_box_text_surface, (info_box_rect.x + 10, text_y))
 
-
-        simulation.people.sort(key=lambda x: x.lifespan)
-        for i, person in enumerate(simulation.people):
-            if i == 0:
-                text_pre = ', '.join(prop for prop in displayed_properties + [str(zoom)])
-                text = list_font.render(text_pre, True, (255,255,255))
-                screen.blit(text, (list_x, i + scroll_y))
-            text = list_font.render(person.get_properties(displayed_properties), True, (255,255,255))
-            screen.blit(text, (list_x, 20 + i * 20 + scroll_y))
-            
-        
         #ui blits
         if show_UI:
-            screen.blit(text_surface, (0, 0))
+            simulation.people.sort(key=lambda x: x.lifespan)
+            for i, person in enumerate(simulation.people):
+                if i == 0:
+                    text_pre = ', '.join(prop for prop in displayed_properties + [str(zoom)])
+                    text = list_font.render(text_pre, True, (255,255,255))
+                    screen.blit(text, (list_x, i + scroll_y))
+                text = list_font.render(person.get_properties(displayed_properties), True, (255,255,255))
+                screen.blit(text, (list_x, 20 + i * 20 + scroll_y))
+                
+            screen.blit(text_surface, (screen_width/2, 0))
+
+            graph_scaling = 0.3
 
             for graph_line in graph_history:
-                pygame.draw.rect(screen, (255,255,255), (graph_line.last, (((grid_size * cell_size) - graph_line.pop  )/10)+(((grid_size * cell_size)/10)*9),1, grid_size * cell_size), 1)
+                # pygame.draw.rect(screen, (255,255,255), (graph_line.last, screen_height - graph_line.pop, 1, 1), 1)
+                pygame.draw.rect(screen, (50,50,70), (graph_line.last, screen_height - (graph_line.pop * graph_scaling), 1, (graph_line.pop * graph_scaling)), 1)
             
         if tick % 10 == 0:
-            if last > grid_size * cell_size:
+            if last > screen_width:
                 last = 0
             for gl in graph_history:
                 if gl.last == last:
