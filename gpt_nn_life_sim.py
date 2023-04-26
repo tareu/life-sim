@@ -483,6 +483,7 @@ def main():
                 screen.blit(text, (list_x, i + scroll_y))
             text = list_font.render(person.get_properties(displayed_properties), True, (255,255,255))
             screen.blit(text, (list_x, 20 + i * 20 + scroll_y))
+            
         
         #ui blits
         if show_UI:
