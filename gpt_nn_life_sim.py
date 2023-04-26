@@ -424,6 +424,7 @@ def main():
                         camera_x += dx
                         camera_y += dy
                         prev_mouse_pos = event.pos
+                    
         # Update zoom with lerp for smoothness
         prev_zoom = zoom
         zoom = zoom + lerp_speed * (target_zoom - zoom)
