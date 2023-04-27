@@ -402,6 +402,8 @@ def pad_or_truncate(data, target_length):
 
 
 def main():
+
+    framerate = 0
     
     grid_size = 100
     num_people = 300
@@ -660,7 +662,7 @@ def main():
         pygame.display.flip()
 
         tick = tick + 1
-        clock.tick(30)
+        clock.tick(framerate)
         
 
     pygame.quit()
