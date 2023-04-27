@@ -42,7 +42,7 @@ class Person:
             nn.Linear(43, 32),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(32, 4),
+            nn.Linear(32, 5),
             nn.Softmax(dim=1)
         )
         return nn_model
