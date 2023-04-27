@@ -1,9 +1,13 @@
+from concurrent.futures import ProcessPoolExecutor
 import pygame
 import random
 import numpy as np
 import torch
 import torch.nn as nn
 import uuid
+import copy
+import asyncio
+
 
 
 class Person:
@@ -16,6 +20,7 @@ class Person:
         self.hunger = birth_hunger
         self.hunger_max = hunger_max
         self.birth_hunger = birth_hunger
+        
 
         if parent1 is None or parent2 is None:
             self.nn = self.create_neural_net()
@@ -27,7 +32,11 @@ class Person:
 
     def create_neural_net(self):
         nn_model = nn.Sequential(
-            nn.Linear(9, 32),
+            nn.Linear(27, 32),
+            nn.ReLU(),
+            nn.Linear(32, 43),
+            nn.ReLU(),
+            nn.Linear(43, 32),
             nn.ReLU(),
             nn.Linear(32, 4),
             nn.Softmax(dim=1)
@@ -56,12 +65,17 @@ class Person:
 
         return new_nn
 
+
+    
     def move(self, grid):
         directions = [(0, 0), (0, 1), (0, -1), (1, 0), (-1, 0)]
 
         surroundings = self.get_surroundings(grid)
-        input_tensor = torch.tensor([self.lifespan, self.reproduction_timer, self.hunger] + surroundings, dtype=torch.float32).unsqueeze(0)
-    
+
+        # Pad or truncate the surroundings list
+        surroundings_data = pad_or_truncate(surroundings, 24)
+
+        input_tensor = torch.tensor([self.lifespan, self.reproduction_timer, self.hunger] + surroundings_data, dtype=torch.float32).unsqueeze(0)
         output = self.nn(input_tensor)
         
         move_idx = torch.argmax(output).item()
@@ -70,58 +84,76 @@ class Person:
         new_x, new_y = (self.x + dx) % grid_size, (self.y + dy) % grid_size
 
         if isinstance(grid[new_x][new_y], Food):
-            max_hunger = self.hunger_max
+            
            
-            if self.hunger < (max_hunger - grid[new_x][new_y].food_value):
+            if self.hunger < self.hunger_max:
                 self.hunger += grid[new_x][new_y].food_value
-
-            grid[new_x][new_y] = None
+                grid[new_x][new_y] = None
         elif grid[new_x][new_y] is None:
             self.update_position(grid, new_x, new_y)
             
 
     def get_surroundings(self, grid):
-        surroundings = [0] * 6
+        surroundings = []
+        grid_width = len(grid)
+        grid_height = len(grid[0])
+
         for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-            new_x, new_y = self.x + dx, self.y + dy
-            if 0 <= new_x < len(grid) and 0 <= new_y < len(grid[0]):
-                if isinstance(grid[new_x][new_y], Food):
-                    surroundings[0] += 1
-                elif isinstance(grid[new_x][new_y], Person):
-                    surroundings[1] += 1
-                elif grid[new_x][new_y] is None:
-                    surroundings[2] += 1
-            else:
-                surroundings[3] += 1
-        surroundings[4] = self.lifespan
-        surroundings[5] = self.hunger
+            new_x, new_y = (self.x + dx) % grid_width, (self.y + dy) % grid_height
+
+            if isinstance(grid[new_x][new_y], Food):
+                surroundings.extend([1, new_x, new_y])
+            elif isinstance(grid[new_x][new_y], Person):
+                surroundings.extend([2, new_x, new_y, int(grid[new_x][new_y].uuid), grid[new_x][new_y].lifespan])
+            elif grid[new_x][new_y] is None:
+                surroundings.extend([0, new_x, new_y])
+
         return surroundings
+
 
     def update_position(self, grid, new_x, new_y):
         grid[self.x][self.y] = None
         self.x, self.y = new_x, new_y
         grid[new_x][new_y] = self
 
-    def reproduce(self, grid, x, y):
+    def can_reproduce(self, grid):
+        for px, py in get_valid_neighbors(self.x,self.y,grid.size):
+            
+            if isinstance(grid[px][py], Person):
+            
+                if self.reproduction_timer > 0:
+                    continue
 
-        other_person = grid[x][y]
-        if other_person is None:
-            return None
-        
-        if self.reproduction_timer > 0:
-            return None
-        
-        # no repro if your hunger is lower than minimum repro hunger
-        if self.hunger < (self.hunger_max * 0.75) and other_person.hunger < (other_person.hunger_max * 0.75):
-            return None
-        for nx, ny in get_valid_neighbors(x, y, grid.size):
+                # no repro if your hunger is lower than minimum repro hunger
+                if self.hunger < (self.hunger_max * 0.50) or grid[px][py].hunger < (grid[px][py].hunger_max * 0.50):
+                    continue
+
+                # Check if there's a None space around
+                for nx, ny in get_valid_neighbors(self.x, self.y, grid.size):
+                    if grid[nx][ny] == None:
+                        return True
+
+        return False
+
+    def reproduce(self, grid):
+        for nx, ny in get_valid_neighbors(self.x, self.y, grid.size):
             if grid[nx][ny] == None:
-                self.hunger = self.hunger / 2
-                child = Person(nx, ny, self, grid[x][y], (self.initial_lifespan + grid[x][y].initial_lifespan) / 2, self.reproduction_cooldown_initial, self.birth_hunger, self.hunger_max)
-                grid[nx][ny] = child
-                self.reproduction_timer = self.reproduction_cooldown_initial
-                return child
+                for px, py in get_valid_neighbors(self.x, self.y, grid.size):
+                    if isinstance(grid[px][py], Person):
+
+                        # no repro if your hunger is lower than minimum repro hunger
+                        if self.hunger < (self.hunger_max * 0.25) or grid[px][py].hunger < (grid[px][py].hunger_max * 0.25):
+                            continue
+
+                        self.hunger = self.hunger / 2
+
+                        #(self, parent1, parent2, grid, x, y):
+                        egg = Egg(self, grid[px][py], grid, nx, ny)
+                        self.reproduction_timer = self.reproduction_cooldown_initial
+                        return egg
         return None
+
+
 
     def decrease_lifespan_and_cooldown_and_hunger(self, grid):
         if self.reproduction_timer > 0:
@@ -132,6 +164,17 @@ class Person:
             grid[self.x][self.y] = None
             return True
         return False
+
+def flatten_surroundings(surroundings):
+    flattened = []
+    for obj in surroundings:
+        if obj['type'] == 'Food':
+            flattened.extend([1, 0, obj['x'], obj['y']])
+        elif obj['type'] == 'Person':
+            flattened.extend([0, 1, obj['x'], obj['y'], obj['uuid'], obj['lifespan']])
+        elif obj['type'] == 'Empty':
+            flattened.extend([0, 0, obj['x'], obj['y']])
+    return flattened
 
 class Grid:
     def __init__(self, size):
@@ -220,6 +263,22 @@ class Graph_Line:
         self.last = last
         self.pop = pop
 
+class Egg:
+    def __init__(self, parent1, parent2, grid, x, y):
+        self.parent1 = copy.copy(parent1)
+        self.parent2 = copy.copy(parent2)
+        self.grid = grid
+        self.x = x
+        self.y = y
+        grid[x][y] = self
+
+
+
+def hatch_egg(egg):
+    parent1, parent2 = egg.parent1, egg.parent2
+    child = Person(egg.x, egg.y, parent1, parent2, (parent1.initial_lifespan + parent2.initial_lifespan) / 2, parent1.reproduction_cooldown_initial, parent1.birth_hunger, parent1.hunger_max)
+    return child
+
 class Simulation:
     def __init__(self, grid, people, food_sources, replenish_rate):
         self.grid = grid
@@ -228,22 +287,23 @@ class Simulation:
         self.food_sources = food_sources
         self.initial_replenish_rate = replenish_rate
         self.replenish_rate = replenish_rate
-       
+        
     def step(self, tick):
-        new_children = []
+        new_eggs = []
         for person in self.people:
-            child = None
+            
             person.move(self.grid)
-            for x, y in get_valid_neighbors(person.x, person.y, self.grid.size):
-                if isinstance(self.grid[x][y], Person):
-                    child = person.reproduce(self.grid, x, y)
-                    if child is not None:
-                        break
-            if child is not None:
-                new_children.append(child)
+            if person.can_reproduce(self.grid):
+                
+                egg = person.reproduce(self.grid)
+                if egg is not None:
+                    
+                    new_eggs.append(egg)
             if person.decrease_lifespan_and_cooldown_and_hunger(self.grid):
                 self.people.remove(person)
-        self.people.extend(new_children)
+
+        # Process eggs in parallel (step 4)
+        self.process_eggs(new_eggs)
 
         if tick % 1 == 0:
             self.grid.move_sources(self.food_sources)
@@ -253,6 +313,18 @@ class Simulation:
             self.replenish_rate = self.initial_replenish_rate
         if self.replenish_rate > 0:
             self.replenish_rate -= 1
+
+    def process_eggs(self, eggs):
+        new_people = []
+        for egg in eggs:
+            
+            new_people.append(hatch_egg(egg))
+     
+
+        for new_person in new_people:
+            x, y = new_person.x, new_person.y
+            self.grid[x][y] = new_person
+            self.people.append(new_person)
 
 
 
@@ -293,21 +365,26 @@ def draw_gradient_rect(surface, rect, start_color, end_color, vertical=True):
                 start_color[2] + int((end_color[2] - start_color[2]) * i / rect.width),
             )
             pygame.draw.line(surface, color, (rect.x + i, rect.y), (rect.x + i, rect.y + rect.height))
-
+            
+def pad_or_truncate(data, target_length):
+    if len(data) > target_length:
+        return data[:target_length]
+    else:
+        return data + [0] * (target_length - len(data))
 
 def main():
     
     grid_size = 100
-    num_people = 200
+    num_people = 300
     initial_lifespan = 5000
     reproduction_timer = 100
-    max_hunger = 4000
-    birth_hunger = 3000
-    food_value = 100
+    max_hunger = 2000
+    birth_hunger = 1000
+    food_value = 200
     replenish_rate = 1
-    num_food_sources = 2
-    food_production_rate=1
-    food_distribution_radius=10
+    num_food_sources = 3
+    food_production_rate = 1
+    food_distribution_radius = 10
 
     grid = Grid(grid_size)
     people = grid.add_people(num_people, initial_lifespan, reproduction_timer, birth_hunger, max_hunger)
@@ -322,6 +399,7 @@ def main():
     person_colour = (255,255,0)
     food_colour = (0,255,0)
     background_colour = (0,0,0)
+    egg_colour = (255, 248, 220)
 
     show_UI = False
     steps_per_second = 60
@@ -448,10 +526,12 @@ def main():
         person_surface.fill(person_colour)
         food_surface = pygame.Surface((cell_size, cell_size))
         food_surface.fill(food_colour)
-
+        egg_surface = pygame.Surface((cell_size, cell_size))
+        egg_surface.fill(egg_colour)
         
         person_surface = pygame.transform.scale(person_surface, (int(person_surface.get_width() * zoom), int(person_surface.get_height() * zoom)))
         food_surface = pygame.transform.scale(food_surface, (int(food_surface.get_width() * zoom), int(food_surface.get_height() * zoom)))
+        egg_surface = pygame.transform.scale(egg_surface, (int(egg_surface.get_width() * zoom), int(egg_surface.get_height() * zoom)))
 
 
         #fill background
@@ -461,19 +541,32 @@ def main():
         # display game objects
         for x in range(grid_size):
             for y in range(grid_size):
-                if isinstance(grid[x][y], Person) or isinstance(grid[x][y], Food):
+                if isinstance(grid[x][y], Person) or isinstance(grid[x][y], Food) or isinstance(grid[x][y], Egg):
                     object_size = cell_size * zoom
                     if object_size < 1:
+
                         if isinstance(grid[x][y], Person):
-                            color = (255, 255, 0)  # yellow
-                        else:
-                            color = (0, 255, 0)  # green
+                            color = person_colour # yellow
+
+                        if isinstance(grid[x][y], Egg):
+                            color = egg_colour
+
+                        if isinstance(grid[x][y], Food):
+                            color = food_colour
+
                         screen.set_at((int((x * cell_size * zoom)+camera_x), int((y * cell_size * zoom)+camera_y)), color)
+
                     else:
+
                         if isinstance(grid[x][y], Person):
                             object_surface = person_surface
-                        else:
+
+                        if isinstance(grid[x][y], Egg):
+                            object_surface = egg_surface
+
+                        if isinstance(grid[x][y], Food):
                             object_surface = food_surface
+
                         screen.blit(object_surface, ((x * cell_size * zoom) + camera_x, (y * cell_size * zoom) + camera_y))
                     
                     # display information box
@@ -481,8 +574,10 @@ def main():
                     (y * cell_size * zoom + camera_y) <= mouse_y <= (y * cell_size * zoom + camera_y + object_size):
                         if isinstance(grid[x][y], Person):
                             info_box_text = "Lifespan: {} \nHunger: {} \nRepro Timer: {}".format(grid[x][y].lifespan, grid[x][y].hunger, grid[x][y].reproduction_timer)
-                        elif isinstance(grid[x][y], Food):
+                        if isinstance(grid[x][y], Food):
                             info_box_text = "Food value: {}".format(grid[x][y].food_value)
+                        if isinstance(grid[x][y], Egg):
+                            info_box_text = "Eggness: 1"
                     
                         # Update the info_box position
                         info_box_surface.set_alpha(200)
@@ -536,7 +631,7 @@ def main():
         pygame.display.flip()
 
         tick = tick + 1
-        clock.tick(steps_per_second)
+        clock.tick(30)
         
 
     pygame.quit()
