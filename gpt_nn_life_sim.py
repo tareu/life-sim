@@ -106,11 +106,10 @@ class Person:
         new_x, new_y = (self.x + dx) % grid_size, (self.y + dy) % grid_size
 
         if isinstance(grid[new_x][new_y], Food):
-            
-           
             if self.hunger < self.hunger_max:
                 self.hunger += grid[new_x][new_y].food_value
                 grid[new_x][new_y] = None
+                
         elif grid[new_x][new_y] is None:
             self.update_position(grid, new_x, new_y)
             
