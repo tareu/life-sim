@@ -378,12 +378,12 @@ def main():
     num_people = 300
     initial_lifespan = 5000
     reproduction_timer = 100
-    max_hunger = 2000
-    birth_hunger = 1000
-    food_value = 200
+    max_hunger = 1500
+    birth_hunger = 500
+    food_value = 100
     replenish_rate = 1
-    num_food_sources = 3
-    food_production_rate = 1
+    num_food_sources = 2
+    food_production_rate = 3
     food_distribution_radius = 10
 
     grid = Grid(grid_size)
