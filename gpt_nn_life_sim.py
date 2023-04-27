@@ -20,6 +20,7 @@ class Person:
         self.hunger = birth_hunger
         self.hunger_max = hunger_max
         self.birth_hunger = birth_hunger
+        self.surroundings_history = []
         
 
         if parent1 is None or parent2 is None:
@@ -32,36 +33,46 @@ class Person:
 
     def create_neural_net(self):
         nn_model = nn.Sequential(
-            nn.Linear(27, 32),
+            nn.Linear(267, 32),
             nn.ReLU(),
+            nn.Dropout(0.5),
             nn.Linear(32, 43),
             nn.ReLU(),
+            nn.Dropout(0.5),
             nn.Linear(43, 32),
             nn.ReLU(),
+            nn.Dropout(0.5),
             nn.Linear(32, 4),
             nn.Softmax(dim=1)
         )
         return nn_model
-
+    
     def combine_neural_nets(self, nn1, nn2):
         new_nn = self.create_neural_net()
         total_weights = sum([param.numel() for param in new_nn.parameters()])
         num_randomized_weights = round(0.01 * total_weights)
 
-        weights_to_randomize = set(random.sample(range(total_weights), num_randomized_weights))
-        weight_index = 0
+        def process_linear_layer(new_layer, layer1, layer2, weights_to_randomize):
+            for child_param, parent1_param, parent2_param in zip(new_layer.parameters(), layer1.parameters(), layer2.parameters()):
+                child_param.data = parent1_param.data.clone()
+                child_param.data += parent2_param.data
+                child_param.data *= 0.5
+                child_param.data *= (1 + 0.01 * torch.rand_like(child_param.data).uniform_(-1, 1))
 
-        for child_param, parent1_param, parent2_param in zip(new_nn.parameters(), nn1.parameters(), nn2.parameters()):
-            for i in range(child_param.data.numel()):
-                if weight_index in weights_to_randomize:
-                    # Totally randomize the weight
-                    child_param.data.view(-1)[i] = torch.randn_like(child_param.data.view(-1)[i])
-                    weights_to_randomize.remove(weight_index)
-                else:
-                    # Select the weight from either parent randomly and apply randomization factor up to 1%
-                    src_param = random.choice([parent1_param, parent2_param])
-                    child_param.data.view(-1)[i] = src_param.data.view(-1)[i] * (1 + 0.01 * random.uniform(-1, 1))
-                weight_index += 1
+                current_weights_to_randomize = {i for i in weights_to_randomize if i < child_param.data.numel()}
+                weights_to_randomize -= current_weights_to_randomize
+
+                child_param.data.view(-1)[list(current_weights_to_randomize)] = torch.randn(len(current_weights_to_randomize)).to(child_param.data.device)
+
+        weights_to_randomize = set(random.sample(range(total_weights), num_randomized_weights))
+
+        for layer_idx, (layer1, layer2, new_layer) in enumerate(zip(nn1, nn2, new_nn)):
+            if isinstance(layer1, nn.Linear):
+                process_linear_layer(new_layer, layer1, layer2, weights_to_randomize)
+            elif isinstance(layer1, (nn.ReLU, nn.Dropout, nn.Softmax)):
+                new_nn[layer_idx] = random.choice([layer1, layer2])
+            else:
+                raise NotImplementedError("Unknown layer type encountered")
 
         return new_nn
 
@@ -71,11 +82,22 @@ class Person:
         directions = [(0, 0), (0, 1), (0, -1), (1, 0), (-1, 0)]
 
         surroundings = self.get_surroundings(grid)
+        if len(self.surroundings_history) > 9:
+            self.surroundings_history.pop(0)
+        self.surroundings_history.append(surroundings)
 
         # Pad or truncate the surroundings list
         surroundings_data = pad_or_truncate(surroundings, 24)
 
-        input_tensor = torch.tensor([self.lifespan, self.reproduction_timer, self.hunger] + surroundings_data, dtype=torch.float32).unsqueeze(0)
+        # Pad or truncate the surroundings_history_data and each of its sublists
+        surroundings_history_data = pad_or_truncate(self.surroundings_history, 10)
+        surroundings_history_data = [pad_or_truncate(sublist, 24) for sublist in surroundings_history_data]
+
+        # Flatten surroundings_history_data
+        surroundings_history_data_flat = [item for sublist in surroundings_history_data for item in sublist]
+
+        # Create the input tensor
+        input_tensor = torch.tensor([self.lifespan, self.reproduction_timer, self.hunger] + surroundings_data + surroundings_history_data_flat, dtype=torch.float32).unsqueeze(0)
         output = self.nn(input_tensor)
         
         move_idx = torch.argmax(output).item()
@@ -371,7 +393,13 @@ def pad_or_truncate(data, target_length):
     if len(data) > target_length:
         return data[:target_length]
     else:
-        return data + [0] * (target_length - len(data))
+        if isinstance(data[0], list):
+            sublist_length = len(data[0])
+            padding_element = [0] * sublist_length
+        else:
+            padding_element = 0
+        return data + [padding_element] * (target_length - len(data))
+
 
 def main():
     
