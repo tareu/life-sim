@@ -107,7 +107,8 @@ class Person:
                 surroundings.extend([2, new_x, new_y, int(grid[new_x][new_y].uuid), grid[new_x][new_y].lifespan])
             elif grid[new_x][new_y] is None:
                 surroundings.extend([0, new_x, new_y])
-
+            
+        
         return surroundings
 
 
