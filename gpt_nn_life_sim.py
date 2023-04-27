@@ -142,7 +142,7 @@ class Person:
                     if isinstance(grid[px][py], Person):
 
                         # no repro if your hunger is lower than minimum repro hunger
-                        if self.hunger < (self.hunger_max * 0.25) or grid[px][py].hunger < (grid[px][py].hunger_max * 0.25):
+                        if self.hunger < (self.hunger_max * 0.50) or grid[px][py].hunger < (grid[px][py].hunger_max * 0.50):
                             continue
 
                         self.hunger = self.hunger / 2
