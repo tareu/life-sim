@@ -403,6 +403,30 @@ def pad_or_truncate(data, target_length):
             padding_element = 0
         return data + [padding_element] * (target_length - len(data))
 
+def load_variables_from_file(my_string, default_values):
+    file_path = f"{my_string}.txt"
+    loaded_values = default_values.copy()
+
+    if os.path.exists(file_path):
+        with open(file_path, "r") as file:
+            for line in file:
+                match = re.match(r"(\w+)\s*=\s*([-+]?\d*\.\d+|[-+]?\d+)", line)
+                if match:
+                    key, value = match.group(1), match.group(2)
+                    if key in default_values:
+                        loaded_values[key] = float(value) if "." in value else int(value)
+
+    return loaded_values
+
+def save_variables_to_file(my_string, variables_dict):
+    file_path = f"{my_string}.txt"
+
+    with open(file_path, "w") as file:
+        for key, value in variables_dict.items():
+            file.write(f"{key} = {value}\n")
+
+def list_txt_files():
+    return [file for file in os.listdir() if file.endswith(".txt")]
 
 def main():
 
