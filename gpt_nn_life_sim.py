@@ -1,4 +1,3 @@
-from concurrent.futures import ProcessPoolExecutor
 import pygame
 import random
 import numpy as np
@@ -6,9 +5,9 @@ import torch
 import torch.nn as nn
 import uuid
 import copy
-
+import inspect
 import os
-import re
+
 
 
 
@@ -402,6 +401,32 @@ def pad_or_truncate(data, target_length):
         else:
             padding_element = 0
         return data + [padding_element] * (target_length - len(data))
+    
+
+
+def make_dict_from_vars(*args):
+    variables_dict = {}
+    frame = inspect.currentframe().f_back
+    for var_name, var_value in frame.f_locals.items():
+        if var_value in args and isinstance(var_value, (int, float)):
+            variables_dict[var_name] = var_value
+    return variables_dict
+
+def parse_line(line):
+    line = line.strip()
+    if '=' in line:
+        key, value_str = line.split('=', 1)
+        key, value_str = key.strip(), value_str.strip()
+
+        try:
+            if '.' in value_str:
+                value = float(value_str)
+            else:
+                value = int(value_str)
+            return key, value
+        except ValueError:
+            pass
+    return None, None
 
 def load_variables_from_file(my_string, default_values):
     file_path = f"{my_string}.txt"
@@ -410,20 +435,20 @@ def load_variables_from_file(my_string, default_values):
     if os.path.exists(file_path):
         with open(file_path, "r") as file:
             for line in file:
-                match = re.match(r"(\w+)\s*=\s*([-+]?\d*\.\d+|[-+]?\d+)", line)
-                if match:
-                    key, value = match.group(1), match.group(2)
-                    if key in default_values:
-                        loaded_values[key] = float(value) if "." in value else int(value)
-
+                key, value = parse_line(line)
+                if key and key in default_values:
+                    loaded_values[key] = value
     return loaded_values
-
 def save_variables_to_file(my_string, variables_dict):
     file_path = f"{my_string}.txt"
 
     with open(file_path, "w") as file:
         for key, value in variables_dict.items():
             file.write(f"{key} = {value}\n")
+
+def instantiate_variables(variables_dict, local_vars):
+    for key, value in variables_dict.items():
+        local_vars[key] = value
 
 def list_txt_files():
     return [file for file in os.listdir() if file.endswith(".txt")]
@@ -446,6 +471,8 @@ def main():
     repro_min_hunger_percent = 1.5
     move_cost = 10
 
+    save_variables_to_file("defaults", make_dict_from_vars(grid_size,num_people,initial_lifespan,reproduction_timer,max_hunger,birth_hunger,food_value,replenish_rate,num_food_sources,food_production_rate,food_distribution_radius,repro_min_hunger_percent,move_cost))
+
     grid = Grid(grid_size)
     people = grid.add_people(num_people, initial_lifespan, reproduction_timer, birth_hunger, max_hunger, repro_min_hunger_percent, move_cost)
     
@@ -458,9 +485,12 @@ def main():
 
     person_colour = (255,255,0)
     food_colour = (0,255,0)
-    background_colour = (20,0,0)
+    background_colour = (0,0,0)
     egg_colour = (255, 248, 220)
-    empty_colour = (200,0,0)
+    empty_colour = (0,43,20)
+    text_colour = (255,255,255)
+    menu_background_colour = (4,134,103)
+    menu_select_colour = (36,142, 85)
 
     show_UI = False
    
@@ -488,6 +518,7 @@ def main():
     last = 0
     graph_history = []
 
+    menu_item_draw_length = 7
     menu = True
 
     zoom = 1.0
@@ -514,7 +545,14 @@ def main():
 
     info_box_font = pygame.font.SysFont(None, 24)
 
+    selected_menu_item = 0
+
+    in_configs_menu = False
+
+    in_saved_settings_menu = False
+
     while running:
+         
         mouse_x, mouse_y = pygame.mouse.get_pos()
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -522,22 +560,93 @@ def main():
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_i:
                     show_UI = not show_UI
-                elif event.key == pygame.K_DOWN:
-                    pass
-                elif event.key == pygame.K_ESCAPE:
-                    running = False
-                elif event.key == pygame.K_UP:
-                    pass
-                elif event.key == pygame.K_RIGHT:
-                    pass
-                elif event.key == pygame.K_LEFT:
-                    pass
+                
+                if event.key == pygame.K_ESCAPE and not in_configs_menu and not in_saved_settings_menu:
+                    menu = not menu
+                    selected_menu_item = 0
+                    in_configs_menu = False
+                    in_saved_settings_menu = False
+
+                if menu:
+                    if not in_configs_menu and not in_saved_settings_menu:
+                        print("main menu")
+                        if event.key == pygame.K_UP:
+                            if selected_menu_item > 0:
+                                selected_menu_item = selected_menu_item - 1
+                            print(selected_menu_item)
+
+                        elif event.key == pygame.K_RIGHT:
+                            pass
+
+                        elif event.key == pygame.K_DOWN:
+                            selected_menu_item = selected_menu_item + 1
+                            print(selected_menu_item)
+
+                        elif event.key == pygame.K_LEFT:
+                            pass
+                        elif event.key == pygame.K_RETURN:
+                            if selected_menu_item == 0:
+                                print("pressing saved settings", selected_menu_item)
+                                selected_menu_item = 0
+                                in_saved_settings_menu = True
+                                
+                            if selected_menu_item == 1:
+                                print("pressing config ", selected_menu_item)
+                                selected_menu_item = 0
+                                in_configs_menu = True
+                                
+                    if in_configs_menu:
+                        print("configs menu")
+                        if event.key == pygame.K_UP:
+                            if selected_menu_item > 0:
+                                selected_menu_item = selected_menu_item - 1
+                            print(selected_menu_item)
+                        if event.key == pygame.K_RIGHT:
+                            pass
+                        if event.key == pygame.K_DOWN:
+                            selected_menu_item = selected_menu_item + 1
+                            print(selected_menu_item)
+                        if event.key == pygame.K_LEFT:
+                            pass
+                        if event.key == pygame.K_RETURN:
+                            if selected_menu_item == 0:
+                                print("pressing item in configs:", selected_menu_item)
+                            if selected_menu_item == 1:
+                                print("pressing item in cofigs:", selected_menu_item)
+                                
+                        if event.key == pygame.K_ESCAPE:
+                            print("quitting configs")
+                            selected_menu_item = 0
+                            in_configs_menu = False
+                    if in_saved_settings_menu:
+                        print("saved settings menu")
+                        if event.key == pygame.K_UP:
+                            if selected_menu_item > 0:
+                                selected_menu_item = selected_menu_item - 1
+                            print(selected_menu_item)
+                        if event.key == pygame.K_RIGHT:
+                            pass
+                        if event.key == pygame.K_DOWN:
+                            selected_menu_item = selected_menu_item + 1
+                            print(selected_menu_item)
+                        if event.key == pygame.K_LEFT:
+                            pass
+                        if event.key == pygame.K_RETURN:
+                            if selected_menu_item == 0:
+                                print("pressing item in saved :", selected_menu_item)
+                            if selected_menu_item == 1:
+                                print("pressing item in saved:", selected_menu_item)
+                                
+                        if event.key == pygame.K_ESCAPE:
+                            print("quitting saved settings")
+                            selected_menu_item = 0
+                            in_saved_settings_menu = False
                 elif event.key == pygame.K_PERIOD:
                     pass
                 elif event.key == pygame.K_COMMA:
                     pass
                 elif event.key == pygame.K_m:
-                    menu = not menu
+                    pass
                 elif event.key == pygame.K_f:
                     pass
             if menu:
@@ -642,17 +751,23 @@ def main():
                 # display information box
                 if (x * cell_size * zoom + camera_x) <= mouse_x <= (x * cell_size * zoom + camera_x + object_size) and \
                 (y * cell_size * zoom + camera_y) <= mouse_y <= (y * cell_size * zoom + camera_y + object_size):
+                    draw = False
                     if isinstance(grid[x][y], Person):
                         info_box_text = "Lifespan: {} \nHunger: {} \nRepro Timer: {}".format(grid[x][y].lifespan, grid[x][y].hunger, grid[x][y].reproduction_timer)
+                        draw = True
                     if isinstance(grid[x][y], Food):
                         info_box_text = "Food value: {}".format(grid[x][y].food_value)
+                        draw = True
                     if isinstance(grid[x][y], Egg):
                         info_box_text = "Eggness: 1"
+                        draw = True
+                   
                 
                     # Update the info_box position
                     info_box_surface.set_alpha(200)
                     info_box_rect.center = (int((x * cell_size * zoom) + camera_x), int((y * cell_size * zoom) + camera_y) - 60)
-                    info_box_displayed = True
+                    if draw:
+                        info_box_displayed = True
                 
 
                         
@@ -674,9 +789,9 @@ def main():
             for i, person in enumerate(simulation.people):
                 if i == 0:
                     text_pre = ', '.join(prop for prop in displayed_properties + [str(zoom)])
-                    text = list_font.render(text_pre, True, (255,255,255))
+                    text = list_font.render(text_pre, True, text_colour)
                     screen.blit(text, (list_x, i + scroll_y))
-                text = list_font.render(person.get_properties(displayed_properties), True, (255,255,255))
+                text = list_font.render(person.get_properties(displayed_properties), True, text_colour)
                 screen.blit(text, (list_x, 20 + i * 20 + scroll_y))
                 
             screen.blit(text_surface, (screen_width/2, 0))
@@ -697,6 +812,55 @@ def main():
             graph_history.append(new_gl)
             
             last = last + 1
+
+                
+        # Assuming you have a list of menu items as strings
+        menu_items = ['Item 1', 'Item 2', 'Item 3', 'Item 4', 'Item 5', 'Item 6', 'Item 7']
+
+        # Set up a font object (you may need to specify the font file path)
+        font_size = int(screen.get_height() / 16)
+        font = pygame.font.Font(None, font_size)
+
+        if menu:
+            # Calculate menu background dimensions and position
+            menu_x = screen.get_width() // 4
+            menu_y = screen.get_height() // 4
+            menu_width = screen.get_width() // 4
+            menu_height = screen.get_height() // 2
+            
+            # Draw the menu background
+            pygame.draw.rect(screen, menu_background_colour, pygame.Rect(menu_x, menu_y, menu_width, menu_height))
+            
+            # Calculate the start index of the items to display
+            start_index_offset = menu_item_draw_length // 2
+            last_possible_start = len(menu_items) - menu_item_draw_length
+            start_item_index = min(selected_menu_item - start_index_offset, last_possible_start)
+            start_item_index = max(start_item_index, 0)
+
+            # Calculate the index of the selected item within the displayed items
+            local_selected_index = selected_menu_item - start_item_index
+
+            # Calculate selection box dimensions and position
+            select_box_x = menu_x
+            select_box_y = menu_y + (screen.get_height() // 16 * local_selected_index)
+            select_box_width = menu_width
+            select_box_height = screen.get_height() // 16
+
+            # Draw the selection box for the currently selected menu item
+            pygame.draw.rect(screen, menu_select_colour, pygame.Rect(select_box_x, select_box_y, select_box_width, select_box_height))
+
+            # Render and draw the menu items
+            for i, item in enumerate(menu_items[start_item_index:start_item_index + menu_item_draw_length]):
+                # Create text surface with the current menu item
+                text_color = (255, 255, 255)  # Set the text color
+                text_surface = font.render(item, True, text_color)
+
+                # Calculate the position to draw the text
+                text_x = menu_x + 10
+                text_y = menu_y + (screen.get_height() // 16 * i)
+
+                # Draw the text on the screen
+                screen.blit(text_surface, (text_x, text_y))
 
         pygame.display.flip()
 
