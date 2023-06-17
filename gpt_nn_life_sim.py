@@ -44,7 +44,7 @@ class Person:
             nn.Linear(43, 32),
             nn.ReLU(),
             nn.Dropout(0.5),
-            nn.Linear(32, 5),
+            nn.Linear(32, 6),
             nn.Softmax(dim=1)
         )
         return nn_model
@@ -90,7 +90,6 @@ class Person:
 
         # Pad or truncate the surroundings list
         surroundings_data = pad_or_truncate(surroundings, 24)
-
         # Pad or truncate the surroundings_history_data and each of its sublists
         surroundings_history_data = pad_or_truncate(self.surroundings_history, 10)
         surroundings_history_data = [pad_or_truncate(sublist, 24) for sublist in surroundings_history_data]
@@ -101,8 +100,9 @@ class Person:
         # Create the input tensor
         input_tensor = torch.tensor([self.lifespan, self.reproduction_timer, self.hunger] + surroundings_data + surroundings_history_data_flat, dtype=torch.float32).unsqueeze(0)
         output = self.nn(input_tensor)
+        move_idx = torch.argmax(output[0][:5]).item()
+        wall_idx = torch.max(output[0][5:6]).item()
         
-        move_idx = torch.argmax(output).item()
         dx, dy = directions[move_idx]
         grid_size = len(grid)
         new_x, new_y = (self.x + dx) % grid_size, (self.y + dy) % grid_size
@@ -111,10 +111,18 @@ class Person:
             if self.hunger < self.hunger_max:
                 self.hunger += grid[new_x][new_y].food_value
                 grid[new_x][new_y] = None
+
+        elif isinstance(grid[new_x,new_y], Wall):
+            if wall_idx == 1.0:
+                grid[new_x][new_y] = None
                 
         elif grid[new_x][new_y] is None:
-            self.hunger -= self.move_cost
-            self.update_position(grid, new_x, new_y)
+            if wall_idx == 1.0:
+                grid[new_x][new_y] = Wall(new_x, new_y)
+                
+            if wall_idx == 0.0:
+                self.hunger -= self.move_cost
+                self.update_position(grid, new_x, new_y)
             
 
     def get_surroundings(self, grid):
@@ -170,7 +178,7 @@ class Person:
                         if self.hunger < (self.birth_hunger * self.repro_min_hunger_percent) or grid[px][py].hunger < (grid[px][py].birth_hunger * self.repro_min_hunger_percent):
                             continue
 
-                        self.hunger = self.hunger - (self.birth_hunger/2)
+                        self.hunger = self.hunger - ((self.birth_hunger * self.repro_min_hunger_percent) / 2)
 
                         #(self, parent1, parent2, grid, x, y):
                         egg = Egg(self, grid[px][py], grid, nx, ny)
@@ -254,7 +262,7 @@ class Grid:
             x, y = source.x, source.y
             random.shuffle(directions)
             for dx, dy in directions:
-                new_x, new_y = x + dx, y + dy
+                new_x, new_y = x + (dx * 1), y + (dy * 1)
                 if 0 < new_x < len(self.grid) and 0 < new_y < len(self.grid) :
                     source.x, source.y = new_x, new_y
                     break
@@ -297,11 +305,16 @@ class Egg:
         self.y = y
         grid[x][y] = self
 
+class Wall:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        
 
 
 def hatch_egg(egg):
     parent1, parent2 = egg.parent1, egg.parent2
-    child = Person(egg.x, egg.y, parent1, parent2, parent1.initial_lifespan, parent1.reproduction_cooldown_initial, parent1.birth_hunger, parent1.hunger_max, parent1.repro_min_hunger_percent, parent1.move_cost)
+    child = Person(egg.x, egg.y, parent1, parent2, parent1.initial_lifespan, parent1.reproduction_cooldown_initial, parent1.birth_hunger - (parent1.repro_min_hunger_percent * parent1.birth_hunger / 2), parent1.hunger_max, parent1.repro_min_hunger_percent, parent1.move_cost)
     return child
 
 class Simulation:
@@ -312,6 +325,7 @@ class Simulation:
         self.food_sources = food_sources
         self.initial_replenish_rate = replenish_rate
         self.replenish_rate = replenish_rate
+        self.new_eggs = []
         
     def step(self, tick):
         new_eggs = []
@@ -395,6 +409,8 @@ def pad_or_truncate(data, target_length):
     if len(data) > target_length:
         return data[:target_length]
     else:
+        if len(data) == 0:
+            data.append(0)
         if isinstance(data[0], list):
             sublist_length = len(data[0])
             padding_element = [0] * sublist_length
@@ -439,6 +455,7 @@ def load_variables_from_file(my_string, default_values):
                 if key and key in default_values:
                     loaded_values[key] = value
     return loaded_values
+
 def save_variables_to_file(my_string, variables_dict):
     file_path = f"{my_string}.txt"
 
@@ -451,24 +468,25 @@ def instantiate_variables(variables_dict, local_vars):
         local_vars[key] = value
 
 def list_txt_files():
-    return [file for file in os.listdir() if file.endswith(".txt")]
+    return [file[:-4] for file in os.listdir() if file.endswith(".txt") and file != "requirements.txt"]
+
 
 def main():
 
     framerate = 0
     
     grid_size = 50
-    num_people = 100
-    initial_lifespan = 6000
-    reproduction_timer = 100
-    max_hunger = 3000
-    birth_hunger = 1000
-    food_value = 100
+    num_people = 200
+    initial_lifespan = 4000
+    reproduction_timer = 200
+    max_hunger = 1000
+    birth_hunger = max_hunger/2
+    food_value = 250
     replenish_rate = 1
     num_food_sources = 1
-    food_production_rate = 3
-    food_distribution_radius = 7
-    repro_min_hunger_percent = 1.5
+    food_production_rate = 2
+    food_distribution_radius = 5
+    repro_min_hunger_percent = 0.50
     move_cost = 10
 
     save_variables_to_file("defaults", make_dict_from_vars(grid_size,num_people,initial_lifespan,reproduction_timer,max_hunger,birth_hunger,food_value,replenish_rate,num_food_sources,food_production_rate,food_distribution_radius,repro_min_hunger_percent,move_cost))
@@ -490,7 +508,8 @@ def main():
     empty_colour = (0,43,20)
     text_colour = (255,255,255)
     menu_background_colour = (4,134,103)
-    menu_select_colour = (36,142, 85)
+    menu_select_colour = (36,20, 10)
+    wall_colour = (200,200,200)
 
     show_UI = False
    
@@ -518,7 +537,6 @@ def main():
     last = 0
     graph_history = []
 
-    menu_item_draw_length = 7
     menu = True
 
     zoom = 1.0
@@ -530,7 +548,7 @@ def main():
     lerp_speed = 0.1
     scroll_speed = 10
     scroll_y = 0
-
+    new_val = ''
     dragging = False
     prev_mouse_pos = None
 
@@ -547,10 +565,16 @@ def main():
 
     selected_menu_item = 0
 
-    in_configs_menu = False
+    change_config_selected_item = None
 
-    in_saved_settings_menu = False
+    in_change_variables_menu = False
 
+    in_load_variables_menu = False
+
+    in_save_variables_menu = False
+
+    menu_items = []
+    main_menu_items = ['load config','change config', 'save config', 'load neural nets', 'save neural nets', 'quit']
     while running:
          
         mouse_x, mouse_y = pygame.mouse.get_pos()
@@ -561,86 +585,155 @@ def main():
                 if event.key == pygame.K_i:
                     show_UI = not show_UI
                 
-                if event.key == pygame.K_ESCAPE and not in_configs_menu and not in_saved_settings_menu:
+                if event.key == pygame.K_ESCAPE and not in_change_variables_menu and not in_load_variables_menu:
                     menu = not menu
                     selected_menu_item = 0
-                    in_configs_menu = False
-                    in_saved_settings_menu = False
+                    in_change_variables_menu = False
+                    in_load_variables_menu = False
 
                 if menu:
-                    if not in_configs_menu and not in_saved_settings_menu:
-                        print("main menu")
+                    if not in_change_variables_menu and not in_load_variables_menu and not in_save_variables_menu:
+                        
+                        menu_items = main_menu_items
                         if event.key == pygame.K_UP:
                             if selected_menu_item > 0:
                                 selected_menu_item = selected_menu_item - 1
-                            print(selected_menu_item)
+                            
 
                         elif event.key == pygame.K_RIGHT:
                             pass
 
                         elif event.key == pygame.K_DOWN:
                             selected_menu_item = selected_menu_item + 1
-                            print(selected_menu_item)
+                            
 
                         elif event.key == pygame.K_LEFT:
                             pass
                         elif event.key == pygame.K_RETURN:
                             if selected_menu_item == 0:
-                                print("pressing saved settings", selected_menu_item)
-                                selected_menu_item = 0
-                                in_saved_settings_menu = True
                                 
+                                menu_items = list_txt_files()
+                                selected_menu_item = 0
+                                in_load_variables_menu = True
+                                break
+
                             if selected_menu_item == 1:
-                                print("pressing config ", selected_menu_item)
-                                selected_menu_item = 0
-                                in_configs_menu = True
                                 
-                    if in_configs_menu:
-                        print("configs menu")
+                                menu_items = list(make_dict_from_vars(grid_size,num_people,initial_lifespan,reproduction_timer,max_hunger,birth_hunger,food_value,replenish_rate,num_food_sources,food_production_rate,food_distribution_radius,repro_min_hunger_percent,move_cost))
+                                selected_menu_item = 0
+                                in_change_variables_menu = True
+                                break
+
+                            if selected_menu_item == 2:
+                                
+                                menu_items = ['enter text here', 'save']
+                                selected_menu_item = 0
+                                in_save_variables_menu = True
+                                break
+                            if selected_menu_item == 5:
+                                running = False
+                                break
+                                
+                    if in_change_variables_menu:
+                        
+                        
                         if event.key == pygame.K_UP:
                             if selected_menu_item > 0:
                                 selected_menu_item = selected_menu_item - 1
-                            print(selected_menu_item)
+                            
+                            break
                         if event.key == pygame.K_RIGHT:
                             pass
                         if event.key == pygame.K_DOWN:
                             selected_menu_item = selected_menu_item + 1
-                            print(selected_menu_item)
+                            
+                            break
                         if event.key == pygame.K_LEFT:
                             pass
-                        if event.key == pygame.K_RETURN:
-                            if selected_menu_item == 0:
-                                print("pressing item in configs:", selected_menu_item)
-                            if selected_menu_item == 1:
-                                print("pressing item in cofigs:", selected_menu_item)
-                                
+                        if change_config_selected_item == None:
+                            if event.key == pygame.K_RETURN:
+                                change_config_selected_item = menu_items[selected_menu_item]
+                                change_config_selected_value = locals()[change_config_selected_item]
+                                new_val = str(change_config_selected_value)
+                                break
+                        
                         if event.key == pygame.K_ESCAPE:
-                            print("quitting configs")
-                            selected_menu_item = 0
-                            in_configs_menu = False
-                    if in_saved_settings_menu:
-                        print("saved settings menu")
+                            if change_config_selected_item == None:
+                                
+                                selected_menu_item = 0
+                                in_change_variables_menu = False
+                            change_config_selected_item = None
+                            break
+                        if not change_config_selected_item == None:
+                            if event.key == pygame.K_RETURN:
+                                
+                                change_config_selected_item = menu_items[selected_menu_item]
+                                locals()[change_config_selected_item] = type(locals()[change_config_selected_item])(new_val)
+                                
+                                
+                                break
+
+                            if event.key == pygame.K_BACKSPACE:
+                                # get text input from 0 to -1 i.e. end.
+                                new_val = new_val[:-1]
+                                break
+                            # Unicode standard is used for string
+                            # formation
+                            
+                            new_val += event.unicode
+                            
+
+                    if in_save_variables_menu:
+                        
                         if event.key == pygame.K_UP:
                             if selected_menu_item > 0:
                                 selected_menu_item = selected_menu_item - 1
-                            print(selected_menu_item)
+                            
+                            break
                         if event.key == pygame.K_RIGHT:
                             pass
                         if event.key == pygame.K_DOWN:
                             selected_menu_item = selected_menu_item + 1
-                            print(selected_menu_item)
+                            
+                            break
+                        if event.key == pygame.K_LEFT:
+                            break
+                        if event.key == pygame.K_RETURN:
+                            if selected_menu_item == 0:
+                                break
+                            if selected_menu_item == 1:
+                                
+                                break
+                        if event.key == pygame.K_ESCAPE:
+                            
+                            selected_menu_item = 0
+                            in_save_variables_menu = False
+                            break
+
+                    if in_load_variables_menu:
+                        
+                        if event.key == pygame.K_UP:
+                            if selected_menu_item > 0:
+                                selected_menu_item = selected_menu_item - 1
+                            break
+                        if event.key == pygame.K_RIGHT:
+                            pass
+                        if event.key == pygame.K_DOWN:
+                            selected_menu_item = selected_menu_item + 1
+                            break
                         if event.key == pygame.K_LEFT:
                             pass
                         if event.key == pygame.K_RETURN:
                             if selected_menu_item == 0:
-                                print("pressing item in saved :", selected_menu_item)
+                                pass
                             if selected_menu_item == 1:
-                                print("pressing item in saved:", selected_menu_item)
-                                
+                                pass
+
                         if event.key == pygame.K_ESCAPE:
-                            print("quitting saved settings")
+                            
                             selected_menu_item = 0
-                            in_saved_settings_menu = False
+                            in_load_variables_menu = False
+                            break
                 elif event.key == pygame.K_PERIOD:
                     pass
                 elif event.key == pygame.K_COMMA:
@@ -656,26 +749,34 @@ def main():
                     if event.button == 1:  # Left click
                         dragging = True
                         prev_mouse_pos = event.pos
+                        break
                     
                     if list_x <= mouse_x < list_x + list_width:
                         if event.button == 4:  # Scroll up
                             scroll_y = min(scroll_y + scroll_speed, 0)
                         elif event.button == 5:  # Scroll down
                             scroll_y -= scroll_speed
+                        break
                     if list_x + list_width <= mouse_x:
                         if event.button == 4:  # Scroll up
                             target_zoom = np.clip(target_zoom * (1 + zoom_speed), 0.1, 10)
+
                         elif event.button == 5:  # Scroll down
                             target_zoom = np.clip(target_zoom * (1 - zoom_speed), 0.1, 10)
+                        break
+                        
+                        
                 elif event.type == pygame.MOUSEBUTTONUP:
                     if event.button == 1:  # Left click
                         dragging = False
+                    break
                 elif event.type == pygame.MOUSEMOTION:
                     if dragging:
                         dx, dy = event.pos[0] - prev_mouse_pos[0], event.pos[1] - prev_mouse_pos[1]
                         camera_x += dx
                         camera_y += dy
                         prev_mouse_pos = event.pos
+                    break
                     
         # Update zoom with lerp for smoothness
         prev_zoom = zoom
@@ -700,11 +801,14 @@ def main():
         egg_surface.fill(egg_colour)
         empty_surface = pygame.Surface((cell_size, cell_size))
         empty_surface.fill(empty_colour)
+        wall_surface = pygame.Surface((cell_size, cell_size))
+        wall_surface.fill(wall_colour)
         
         person_surface = pygame.transform.scale(person_surface, (int(person_surface.get_width() * zoom) + 1, int(person_surface.get_height() * zoom) + 1))
         food_surface = pygame.transform.scale(food_surface, (int(food_surface.get_width() * zoom) + 1, int(food_surface.get_height() * zoom) + 1))
         egg_surface = pygame.transform.scale(egg_surface, (int(egg_surface.get_width() * zoom) + 1, int(egg_surface.get_height() * zoom) + 1))
         empty_surface = pygame.transform.scale(empty_surface, (int(empty_surface.get_width() * zoom) + 1, int(empty_surface.get_height() * zoom) + 1))
+        wall_surface = pygame.transform.scale(wall_surface, (int(wall_surface.get_width() * zoom) + 1, int(wall_surface.get_height() * zoom) + 1))
 
 
         #fill background
@@ -730,6 +834,9 @@ def main():
                     if isinstance(grid[x][y], Food):
                         color = food_colour
 
+                    if isinstance(grid[x][y], Wall):
+                        color = wall_colour
+
                     
                     screen.set_at((int((x * cell_size * zoom)+camera_x), int((y * cell_size * zoom)+camera_y)), color)
 
@@ -745,6 +852,9 @@ def main():
 
                     if isinstance(grid[x][y], Food):
                         object_surface = food_surface
+
+                    if isinstance(grid[x][y], Wall):
+                        object_surface = wall_surface
 
                     screen.blit(object_surface, ((x * cell_size * zoom) + camera_x, (y * cell_size * zoom) + camera_y))
                 
@@ -813,55 +923,53 @@ def main():
             
             last = last + 1
 
-                
-        # Assuming you have a list of menu items as strings
-        menu_items = ['Item 1', 'Item 2', 'Item 3', 'Item 4', 'Item 5', 'Item 6', 'Item 7']
-
-        # Set up a font object (you may need to specify the font file path)
-        font_size = int(screen.get_height() / 16)
-        font = pygame.font.Font(None, font_size)
-
         if menu:
-            # Calculate menu background dimensions and position
-            menu_x = screen.get_width() // 4
-            menu_y = screen.get_height() // 4
-            menu_width = screen.get_width() // 4
-            menu_height = screen.get_height() // 2
+            if in_load_variables_menu:
+                pass
+            if in_change_variables_menu:
+                pass
+            if in_save_variables_menu:
+                pass
+
+            if not in_change_variables_menu and not in_load_variables_menu and not in_save_variables_menu:
+                menu_items = main_menu_items
             
-            # Draw the menu background
-            pygame.draw.rect(screen, menu_background_colour, pygame.Rect(menu_x, menu_y, menu_width, menu_height))
+            if selected_menu_item >= len(menu_items):
+                selected_menu_item = selected_menu_item - 1
+
             
-            # Calculate the start index of the items to display
-            start_index_offset = menu_item_draw_length // 2
-            last_possible_start = len(menu_items) - menu_item_draw_length
-            start_item_index = min(selected_menu_item - start_index_offset, last_possible_start)
-            start_item_index = max(start_item_index, 0)
+            
+            for count in range(len(menu_items)):
+                
+                menu_colour = menu_background_colour
+                if selected_menu_item == count:
+                    menu_colour = menu_select_colour
+                
+                menu_item_width = screen_width/5
+                menu_item_height = screen_height/20
+                padding = 10
+                text = font.render(menu_items[count], True, text_colour)
+                pygame.draw.rect(screen, menu_colour, ((screen_width/2)-(menu_item_width/2), (screen_height/5) + (count * (menu_item_height + padding)) - ((menu_item_height + padding) * selected_menu_item), menu_item_width, menu_item_height), 0)
+                screen.blit(text, ((screen_width/2)-(menu_item_width/2), (screen_height/5)+ (count * (menu_item_height + padding)) - ((menu_item_height + padding) * selected_menu_item)))
+                count = count + 1
 
-            # Calculate the index of the selected item within the displayed items
-            local_selected_index = selected_menu_item - start_item_index
-
-            # Calculate selection box dimensions and position
-            select_box_x = menu_x
-            select_box_y = menu_y + (screen.get_height() // 16 * local_selected_index)
-            select_box_width = menu_width
-            select_box_height = screen.get_height() // 16
-
-            # Draw the selection box for the currently selected menu item
-            pygame.draw.rect(screen, menu_select_colour, pygame.Rect(select_box_x, select_box_y, select_box_width, select_box_height))
-
-            # Render and draw the menu items
-            for i, item in enumerate(menu_items[start_item_index:start_item_index + menu_item_draw_length]):
-                # Create text surface with the current menu item
-                text_color = (255, 255, 255)  # Set the text color
-                text_surface = font.render(item, True, text_color)
-
-                # Calculate the position to draw the text
-                text_x = menu_x + 10
-                text_y = menu_y + (screen.get_height() // 16 * i)
-
-                # Draw the text on the screen
-                screen.blit(text_surface, (text_x, text_y))
-
+            if not change_config_selected_item == None:
+                text = font.render(str(change_config_selected_value), True, text_colour)
+                pygame.draw.rect(screen, menu_colour, ((screen_width/2)-(menu_item_width/2), 50, menu_item_width, menu_item_height), 0)
+                screen.blit(text, ((screen_width/2)-(menu_item_width/2), 50))
+                text = font.render(new_val, True, text_colour)
+                screen.blit(text, ((screen_width/2)-(menu_item_width/2)+50, 50))
+                
+        if len(simulation.people) < 11:
+            
+            for x in range(num_people):
+                parent1 = simulation.people[random.randint(0, len(simulation.people) - 1)]
+                parent2 = simulation.people[random.randint(0, len(simulation.people) - 1)]
+                while parent1.uuid == parent2.uuid:
+                    parent2 = simulation.people[random.randint(0, len(simulation.people) - 1)]
+                x, y = random.randint(0, len(grid) - 1), random.randint(0, len(grid[0]) - 1)
+                grid[x, y] = None
+                grid.append(Person(x, y, parent1, parent2, parent1.initial_lifespan, parent1.reproduction_cooldown_initial, parent1.repro_min_hunger_percent * parent1.birth_hunger, parent1.hunger_max, parent1.repro_min_hunger_percent, parent1.move_cost))
         pygame.display.flip()
 
         tick = tick + 1
